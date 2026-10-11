@@ -1,3 +1,4 @@
 pmode_core.bin
 sparky86
 build/
+src/boot/*.o
