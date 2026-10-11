@@ -19,6 +19,10 @@ if(BUILD_BOOT)
     file(GLOB BOOT_ASM_FILES "${BOOT_DIR}/*.asm")
     set(BOOT_OBJ    "${BOOT_DIR}/boot.o")
     set(PAYLOAD_OBJ "${BOOT_DIR}/payload.o")
+    set(GPU_OBJ     "${BOOT_DIR}/gpu.o")
+    file(GLOB BOOT_HEADERS "${BOOT_DIR}/*.h")
+    set(BOOT_CXX_FLAGS -m32 -march=i386 -ffreestanding -O2 -fno-pic -fno-pie -fno-stack-protector
+                         -fno-exceptions -fno-rtti -mno-80387 -mno-mmx -mno-sse)
     set(BOOT_BIN    "${CMAKE_CURRENT_SOURCE_DIR}/pmode_core.bin")
 
     add_custom_command(
@@ -29,21 +33,27 @@ if(BUILD_BOOT)
         COMMENT "fasm boot.asm"
         VERBATIM)
 
-    add_custom_command(
-        OUTPUT "${PAYLOAD_OBJ}"
-        COMMAND ${CMAKE_CXX_COMPILER} -m32 -march=i386 -ffreestanding -O2
-                -mno-80387 -mno-mmx -mno-sse
-                -c "${BOOT_DIR}/payload.cpp" -o "${PAYLOAD_OBJ}"
-        DEPENDS "${BOOT_DIR}/payload.cpp"
-        COMMENT "Compiling payload.cpp (freestanding i386)"
-        VERBATIM)
+    foreach(unit payload gpu)
+        if(unit STREQUAL "payload")
+            set(unit_obj "${PAYLOAD_OBJ}")
+        else()
+            set(unit_obj "${GPU_OBJ}")
+        endif()
+        add_custom_command(
+            OUTPUT "${unit_obj}"
+            COMMAND ${CMAKE_CXX_COMPILER} ${BOOT_CXX_FLAGS}
+                    -c "${BOOT_DIR}/${unit}.cpp" -o "${unit_obj}"
+            DEPENDS "${BOOT_DIR}/${unit}.cpp" ${BOOT_HEADERS}
+            COMMENT "Compiling ${unit}.cpp (freestanding i386)"
+            VERBATIM)
+    endforeach()
 
     add_custom_command(
         OUTPUT "${BOOT_BIN}"
         COMMAND ${CMAKE_LINKER} -m elf_i386 -T linker.ld
-                boot.o payload.o -o "${BOOT_BIN}"
+                boot.o payload.o gpu.o -o "${BOOT_BIN}"
         WORKING_DIRECTORY "${BOOT_DIR}"
-        DEPENDS "${BOOT_OBJ}" "${PAYLOAD_OBJ}" "${BOOT_DIR}/linker.ld"
+        DEPENDS "${BOOT_OBJ}" "${PAYLOAD_OBJ}" "${GPU_OBJ}" "${BOOT_DIR}/linker.ld"
         COMMENT "Linking pmode_core.bin"
         VERBATIM)
 

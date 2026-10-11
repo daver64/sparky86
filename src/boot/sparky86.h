@@ -73,3 +73,9 @@ static inline bool quit_requested()
 {
     return inl(0x0040) & 1;
 }
+
+void submit_gpu_command(uint32_t opcode, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4);
+void clear_screen(uint32_t colour);
+void line(int x1,int y1, int x2, int y2);
+void rect(int x, int y, int width, int height);
+void present();
