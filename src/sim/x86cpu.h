@@ -1,5 +1,6 @@
 #pragma once
 #include <x86emu.h>
+#include <atomic>
 #include <vector>
 #include <cstdint>
 #include <stdexcept>
@@ -41,12 +42,13 @@ public:
 
     uint32_t get_eax() const { return m_emu->x86.R_EAX; }
     bool is_halted() const   { return m_halted; }
+    void force_stop()        { x86emu_stop(m_emu); }
 
 private:
     SystemBus& m_bus;
     int m_core_id;
     std::vector<uint8_t> m_ram;
-    bool m_halted;
+    std::atomic<bool> m_halted;
     x86emu_t* m_emu = nullptr;
 
     static unsigned memio_handler(x86emu_t* emu, u32 addr, u32* val, unsigned type) {

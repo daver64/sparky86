@@ -31,11 +31,11 @@ if(BUILD_BOOT)
 
     add_custom_command(
         OUTPUT "${PAYLOAD_OBJ}"
-        COMMAND ${CMAKE_C_COMPILER} -m32 -march=i386 -ffreestanding -O2
+        COMMAND ${CMAKE_CXX_COMPILER} -m32 -march=i386 -ffreestanding -O2
                 -mno-80387 -mno-mmx -mno-sse
-                -c "${BOOT_DIR}/payload.c" -o "${PAYLOAD_OBJ}"
-        DEPENDS "${BOOT_DIR}/payload.c"
-        COMMENT "Compiling payload.c (freestanding i386)"
+                -c "${BOOT_DIR}/payload.cpp" -o "${PAYLOAD_OBJ}"
+        DEPENDS "${BOOT_DIR}/payload.cpp"
+        COMMENT "Compiling payload.cpp (freestanding i386)"
         VERBATIM)
 
     add_custom_command(
