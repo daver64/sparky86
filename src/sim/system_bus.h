@@ -4,6 +4,7 @@
 #include <iostream>
 #include <mutex>
 #include <sl.h>
+#include <utility>
 #include <vector>
 // Fixed offsets relative to the start of Shared RAM (0xA0000)
 constexpr uint32_t GPU_REG_READ_PTR = 0x0000;  // Host updates this
@@ -18,7 +19,8 @@ enum GpuOpcode : uint32_t
 {
     GPU_CMD_CLEAR_SCREEN = 1,
     GPU_CMD_DRAW_LINE = 2,
-    GPU_CMD_DRAW_RECT = 3
+    GPU_CMD_DRAW_RECT = 3,
+    GPU_CMD_PRESENT = 4 // End of frame: host displays one frame per present
 };
 
 // Layout must match 32-bit alignment for both Host and Guest
@@ -104,42 +106,29 @@ class SystemBus
 
         uint32_t r_ptr = read_ram32(GPU_REG_READ_PTR);
         uint32_t w_ptr = read_ram32(GPU_REG_WRITE_PTR);
-        gpu_packets.clear();
-        // Process all outstanding packets until the read pointer catches the write pointer
+
+        // Consume exactly one complete frame (up to and including its PRESENT packet).
+        // With no complete frame queued, leave gpu_packets alone so the last frame is redrawn.
+        std::vector<GpuPacket> frame;
+        bool complete = false;
         while (r_ptr != w_ptr)
         {
-            uint32_t packet_offset = GPU_RING_BASE + (r_ptr * sizeof(GpuPacket));
-
             GpuPacket pkt;
-            std::memcpy(&pkt, &m_shared_ram[packet_offset], sizeof(GpuPacket));
-            gpu_packets.emplace_back(pkt);
-            /*
-            // Execute commands via native simlib hardware acceleration paths
-            switch (pkt.opcode)
+            std::memcpy(&pkt, &m_shared_ram[GPU_RING_BASE + (r_ptr * sizeof(GpuPacket))], sizeof(GpuPacket));
+            r_ptr = (r_ptr + 1) % GPU_RING_MAX_SLOTS;
+            if (pkt.opcode == GPU_CMD_PRESENT)
             {
-            case GPU_CMD_CLEAR_SCREEN:
-                // Example: simlib_clear_screen(pkt.arg1);
-                std::cerr << "[vGPU Native] Clear Canvas -> Color 0x" << std::hex << pkt.arg1 << std::dec << "\n";
-                break;
-
-            case GPU_CMD_DRAW_LINE:
-                // Example: simlib_draw_line(pkt.arg1, pkt.arg2, pkt.arg3, pkt.arg4);
-                std::cerr << "[vGPU Native] Line from (" << pkt.arg1 << "," << pkt.arg2 << ") to (" << pkt.arg3 << ","
-                          << pkt.arg4 << ")\n";
-                break;
-
-            case GPU_CMD_DRAW_RECT:
-                std::cerr << "[vGPU Native] Rect at (" << pkt.arg1 << "," << pkt.arg2 << ") Width: " << pkt.arg3
-                          << " Height: " << pkt.arg4 << "\n";
+                complete = true;
                 break;
             }
-*/
-            // Move pointer forward wrapped cleanly within our ring size
-            r_ptr = (r_ptr + 1) % GPU_RING_MAX_SLOTS;
+            frame.emplace_back(pkt);
         }
+        if (!complete)
+            return;
+        gpu_packets = std::move(frame);
 
         // Sync the final processed pointer state back to the Shared RAM for the x86 view
         write_ram32(GPU_REG_READ_PTR, r_ptr);
-        m_gpu_dirty = false;
+        m_gpu_dirty = (r_ptr != w_ptr);
     }
 };

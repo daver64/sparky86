@@ -1,70 +1,4 @@
-
-// Explicit primitive bindings mapping directly to 32-bit x86 targets
-typedef unsigned char uint8_t;
-typedef unsigned short uint16_t;
-typedef unsigned int uint32_t;
-typedef unsigned long long uint64_t;
-
-typedef signed char int8_t;
-typedef signed short int16_t;
-typedef signed int int32_t;
-typedef signed long long int64_t;
-
-// Standard helper type for sizes matching standard compiler outputs
-typedef __SIZE_TYPE__ size_t;
-
-// Fixed offsets relative to the start of Shared RAM (0xA0000)
-constexpr uint32_t GPU_REG_READ_PTR = 0x0000;  // Host updates this
-constexpr uint32_t GPU_REG_WRITE_PTR = 0x0004; // Guest updates this
-constexpr uint32_t GPU_RING_BASE = 0x0010;     // Packets start at 0xA0010
-constexpr uint32_t GPU_RING_MAX_SLOTS = 256;   // Max packets in flight
-
-// GPU Opcode Constants
-enum GpuOpcode : uint32_t
-{
-    GPU_CMD_CLEAR_SCREEN = 1,
-    GPU_CMD_DRAW_LINE = 2,
-    GPU_CMD_DRAW_RECT = 3
-};
-
-// Layout must match 32-bit alignment for both Host and Guest
-struct GpuPacket
-{
-    uint32_t opcode;
-    uint32_t arg1; // Color / X1
-    uint32_t arg2; // Y1
-    uint32_t arg3; // X2 / Width
-    uint32_t arg4; // Y2 / Height
-};
-
-// Packs a colour as 0xRRGGBBAA, the format the host's GPU expects
-#define rgba(r, g, b, a) \
-    ((((uint32_t)(r) & 0xFF) << 24) | (((uint32_t)(g) & 0xFF) << 16) | (((uint32_t)(b) & 0xFF) << 8) | ((uint32_t)(a) & 0xFF))
-
-#define SHARED_RAM_BASE 0x000A0000
-
-// Helper references pointing to the control structure registers mapped in 32-bit pmode
-#define GPU_READ_PTR (*(volatile uint32_t *)(SHARED_RAM_BASE + GPU_REG_READ_PTR))
-#define GPU_WRITE_PTR (*(volatile uint32_t *)(SHARED_RAM_BASE + GPU_REG_WRITE_PTR))
-#define GPU_RING_SLOTS ((volatile GpuPacket *)(SHARED_RAM_BASE + GPU_RING_BASE))
-
-static inline void outw(uint16_t port, uint16_t data)
-{
-    __asm__ volatile("outw %0, %1" : : "a"(data), "Nd"(port));
-}
-
-static inline uint32_t inl(uint16_t port)
-{
-    uint32_t data;
-    __asm__ volatile("inl %1, %0" : "=a"(data) : "Nd"(port));
-    return data;
-}
-
-// Host sets bit 0 of the status port when the app should exit
-static inline bool quit_requested()
-{
-    return inl(0x0040) & 1;
-}
+#include "sparky86.h"
 
 // Thread-safe-ready Guest Command Publisher
 void submit_gpu_command(uint32_t opcode, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4)
@@ -94,22 +28,59 @@ void submit_gpu_command(uint32_t opcode, uint32_t a1, uint32_t a2, uint32_t a3, 
     outw(0x0010, 1);
 }
 
+void clear_screen(uint32_t colour)
+{
+    submit_gpu_command(GPU_CMD_CLEAR_SCREEN, colour, 0, 0, 0);
+}
+
+void line(int x1,int y1, int x2, int y2)
+{
+    submit_gpu_command(GPU_CMD_DRAW_LINE,x1,y1,x2,y2);
+}
+
+void rect(int x, int y, int width, int height)
+{
+    submit_gpu_command(GPU_CMD_DRAW_RECT,x,y,width,height);
+}
+
+// Ends the frame and blocks until the host has consumed it, locking the guest to the display rate
+void present()
+{
+    submit_gpu_command(GPU_CMD_PRESENT, 0, 0, 0, 0);
+    while (GPU_READ_PTR != GPU_WRITE_PTR && !quit_requested())
+    {
+        __asm__ volatile("pause");
+    }
+}
 extern "C" void _start()
 {
 
+    int xpos=100;
+    int ypos=100;
+    int dx=1;
+    int dy=1;
+    int max_x=700;
+    int max_y=500;
     while(!quit_requested())
     {
+        xpos+=dx;
+        ypos+=dy;
+        if(xpos<1 || xpos>max_x)
+        {
+            dx=-dx;
+        }
+        if(ypos<1 || ypos>max_y)
+        {
+            dy=-dy;
+        }
         // Clear screen with a background color hex code
-        submit_gpu_command(GPU_CMD_CLEAR_SCREEN, rgba(0x50, 0x50, 0x50, 0xFF), 0, 0, 0);
-
+        clear_screen(rgba(100,100,100,255));
         // Draw a bounding frame line from (10, 20) to (300, 20)
-        submit_gpu_command(GPU_CMD_DRAW_LINE, 10, 20, 300, 20);
+        line(10,50,100,50);
 
         // Draw a square primitive block
-        submit_gpu_command(GPU_CMD_DRAW_RECT, 50, 50, 100, 100);
-    }
-    while (1)
-    {
-        __asm__ volatile("hlt");
+        rect(xpos, ypos, xpos+100, ypos+100);
+
+        present();
     }
 }
