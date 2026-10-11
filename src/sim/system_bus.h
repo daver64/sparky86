@@ -20,9 +20,13 @@ enum GpuOpcode : uint32_t
     GPU_CMD_CLEAR_SCREEN = 1,
     GPU_CMD_DRAW_LINE = 2,
     GPU_CMD_DRAW_RECT = 3,
-    GPU_CMD_PRESENT = 4 ,
-    GPU_CMD_DRAW_COLOUR = 5
+    GPU_CMD_PRESENT = 4,
+    GPU_CMD_DRAW_COLOUR = 5,
+    GPU_CMD_TEXT_BEGIN = 6, // arg1=x, arg2=y, arg3=length
+    GPU_CMD_TEXT_DATA = 7   // arg1..arg4 = 16 chars, little-endian packed
 };
+
+constexpr uint32_t GPU_TEXT_MAX = 128;
 
 // Layout must match 32-bit alignment for both Host and Guest
 struct GpuPacket

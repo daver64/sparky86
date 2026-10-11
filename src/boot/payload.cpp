@@ -24,6 +24,7 @@ extern "C" void _start()
         draw_colour(rgba(0,255,0,255));
         line(10,50,100,50);
         rect(xpos, ypos, xpos+100, ypos+100);
+        textprintf(10, 10, "pos %d,%d  [%04x] %s", xpos, ypos, xpos, "ok");
         present();
     }
 }

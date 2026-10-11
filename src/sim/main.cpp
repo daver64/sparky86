@@ -1,7 +1,9 @@
 
 #include "system_bus.h"
 #include "x86cpu.h"
+#include <algorithm>
 #include <chrono>
+#include <string>
 #include <fstream>
 #include <iostream>
 #include <iterator>
@@ -19,6 +21,11 @@ struct GlobalState
     SystemBus system_bus;
     std::vector<X86Cpu*> cores;
     sl::Colour draw_colour;
+    // Text being reassembled from TEXT_BEGIN / TEXT_DATA packets
+    int text_x{0};
+    int text_y{0};
+    uint32_t text_len{0};
+    std::string text;
 };
 
 GlobalState global_state;
@@ -87,6 +94,29 @@ int main()
                 {
                     sl::rect(sl::screen,gpu_packet.arg1,gpu_packet.arg2,gpu_packet.arg3,
                         gpu_packet.arg4,global_state.draw_colour);
+                } break;
+
+                case GPU_CMD_TEXT_BEGIN:
+                {
+                    global_state.text_x = gpu_packet.arg1;
+                    global_state.text_y = gpu_packet.arg2;
+                    global_state.text_len = std::min(gpu_packet.arg3, GPU_TEXT_MAX);
+                    global_state.text.clear();
+                } break;
+
+                case GPU_CMD_TEXT_DATA:
+                {
+                    const uint32_t words[4] = {gpu_packet.arg1, gpu_packet.arg2, gpu_packet.arg3, gpu_packet.arg4};
+                    for (int i = 0; i < 16 && global_state.text.size() < global_state.text_len; ++i)
+                        global_state.text.push_back(static_cast<char>((words[i / 4] >> ((i % 4) * 8)) & 0xFF));
+                    if (global_state.text.size() == global_state.text_len && global_state.text_len > 0)
+                    {
+                        // "%s" so guest text is never treated as a format string
+                        sl::gprintf(global_state.text_x, global_state.text_y, global_state.draw_colour, "%s",
+                                    global_state.text.c_str());
+                        global_state.text_len = 0;
+                        global_state.text.clear();
+                    }
                 } break;
 
                 case GPU_CMD_DRAW_COLOUR:

@@ -33,8 +33,16 @@ The guest publishes commands to a ring buffer in shared RAM and rings a doorbell
 | Opcode | Command | Arguments | Status |
 |--------|---------|-----------|--------|
 | 1 | Clear screen | `arg1` = colour `0xRRGGBBAA` | Implemented |
-| 2 | Draw line | `x1, y1, x2, y2` | Defined, not drawn yet |
-| 3 | Draw rect | `x, y, w, h` | Defined, not drawn yet |
+| 2 | Draw line | `x1, y1, x2, y2` | Implemented |
+| 3 | Draw rect | `x, y, w, h` | Implemented |
+| 4 | Present | none | Ends a frame; the host shows one frame per present |
+| 5 | Set draw colour | `arg1` = colour `0xRRGGBBAA` | Implemented |
+| 6 | Text begin | `x, y, length` (max 128) | Implemented |
+| 7 | Text data | 16 chars packed little-endian across `arg1..arg4` | Implemented |
+
+### Text
+
+Guest code calls `textprintf(x, y, fmt, ...)` (see `src/boot/gpu.cpp`). The guest formats the string itself with a built-in `vsnprintf` supporting `%d %i %u %x %X %c %s %%` with width, `0` padding and `-` left-align, truncated to 128 characters. It is sent as one text-begin packet followed by text-data packets, and the host draws it with the default simlib monospace font in the current draw colour.
 
 ### I/O ports
 

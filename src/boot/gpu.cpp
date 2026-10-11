@@ -57,3 +57,144 @@ void present()
         __asm__ volatile("pause");
     }
 }
+
+static void put_char(char *buf, size_t size, size_t &pos, char c)
+{
+    if (pos + 1 < size)
+        buf[pos] = c;
+    pos++;
+}
+
+// Minimal printf: %d %i %u %x %X %c %s %% with width, '0' padding and '-' alignment.
+// Returns the length the full output would have had, like snprintf.
+int vsnprintf(char *buf, size_t size, const char *fmt, __builtin_va_list ap)
+{
+    size_t pos = 0;
+    for (; *fmt; ++fmt)
+    {
+        if (*fmt != '%')
+        {
+            put_char(buf, size, pos, *fmt);
+            continue;
+        }
+        ++fmt;
+        bool left = false, zero = false;
+        for (;; ++fmt)
+        {
+            if (*fmt == '-')
+                left = true;
+            else if (*fmt == '0')
+                zero = true;
+            else
+                break;
+        }
+        int width = 0;
+        while (*fmt >= '0' && *fmt <= '9')
+            width = width * 10 + (*fmt++ - '0');
+
+        char tmp[12];
+        const char *str = tmp;
+        int len = 0;
+        bool negative = false;
+        switch (*fmt)
+        {
+        case 'd':
+        case 'i':
+        case 'u':
+        case 'x':
+        case 'X':
+        {
+            uint32_t v;
+            uint32_t base = (*fmt == 'x' || *fmt == 'X') ? 16 : 10;
+            if (*fmt == 'd' || *fmt == 'i')
+            {
+                int32_t sv = __builtin_va_arg(ap, int32_t);
+                negative = sv < 0;
+                v = negative ? 0u - (uint32_t)sv : (uint32_t)sv;
+            }
+            else
+                v = __builtin_va_arg(ap, uint32_t);
+            const char *digits = (*fmt == 'X') ? "0123456789ABCDEF" : "0123456789abcdef";
+            char rev[12];
+            int n = 0;
+            do
+            {
+                rev[n++] = digits[v % base];
+                v /= base;
+            } while (v);
+            // Zero padding goes between the sign and the digits
+            if (negative && zero && !left)
+            {
+                put_char(buf, size, pos, '-');
+                width--;
+                negative = false;
+            }
+            if (negative)
+                tmp[len++] = '-';
+            while (n)
+                tmp[len++] = rev[--n];
+            break;
+        }
+        case 'c':
+            tmp[0] = (char)__builtin_va_arg(ap, int);
+            len = 1;
+            break;
+        case 's':
+            str = __builtin_va_arg(ap, const char *);
+            if (!str)
+                str = "(null)";
+            while (str[len])
+                len++;
+            break;
+        case '%':
+            tmp[0] = '%';
+            len = 1;
+            break;
+        case 0:
+            --fmt; // dangling '%' at end of string
+            continue;
+        default:
+            tmp[0] = '%';
+            tmp[1] = *fmt;
+            len = 2;
+            break;
+        }
+        int pad = width > len ? width - len : 0;
+        char padc = (zero && !left && *fmt != 's' && *fmt != 'c') ? '0' : ' ';
+        if (!left)
+            while (pad--)
+                put_char(buf, size, pos, padc);
+        for (int i = 0; i < len; ++i)
+            put_char(buf, size, pos, str[i]);
+        if (left)
+            while (pad--)
+                put_char(buf, size, pos, ' ');
+    }
+    if (size)
+        buf[pos < size ? pos : size - 1] = 0;
+    return (int)pos;
+}
+
+void textprintf(int x, int y, const char *fmt, ...)
+{
+    char buf[GPU_TEXT_MAX + 1];
+    __builtin_va_list ap;
+    __builtin_va_start(ap, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, ap);
+    __builtin_va_end(ap);
+
+    uint32_t len = 0;
+    while (buf[len])
+        len++;
+    if (!len)
+        return;
+
+    submit_gpu_command(GPU_CMD_TEXT_BEGIN, x, y, len, 0);
+    for (uint32_t off = 0; off < len; off += 16)
+    {
+        uint32_t words[4] = {0, 0, 0, 0};
+        for (uint32_t i = 0; i < 16 && off + i < len; ++i)
+            words[i / 4] |= (uint32_t)(uint8_t)buf[off + i] << ((i % 4) * 8);
+        submit_gpu_command(GPU_CMD_TEXT_DATA, words[0], words[1], words[2], words[3]);
+    }
+}
