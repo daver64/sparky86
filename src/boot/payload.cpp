@@ -23,6 +23,9 @@ extern "C" void _start()
         }
         // Clear screen with a background color hex code
         clear_screen(rgba(100,100,100,255));
+
+        draw_colour(rgba(0,255,0,255));
+
         // Draw a bounding frame line from (10, 20) to (300, 20)
         line(10,50,100,50);
 

@@ -20,7 +20,8 @@ enum GpuOpcode : uint32_t
     GPU_CMD_CLEAR_SCREEN = 1,
     GPU_CMD_DRAW_LINE = 2,
     GPU_CMD_DRAW_RECT = 3,
-    GPU_CMD_PRESENT = 4 // End of frame: host displays one frame per present
+    GPU_CMD_PRESENT = 4 ,
+    GPU_CMD_DRAW_COLOUR = 5
 };
 
 // Layout must match 32-bit alignment for both Host and Guest

@@ -18,6 +18,7 @@ struct GlobalState
     bool running{true};
     SystemBus system_bus;
     std::vector<X86Cpu*> cores;
+    sl::Colour draw_colour;
 };
 
 GlobalState global_state;
@@ -77,17 +78,20 @@ int main()
 
                 case GPU_CMD_DRAW_LINE:
                 {
-                    sl::Colour line_colour{sl::Green};
                     sl::line(sl::screen,
                         gpu_packet.arg1,gpu_packet.arg2,
-                        gpu_packet.arg3,gpu_packet.arg4,line_colour);
+                        gpu_packet.arg3,gpu_packet.arg4,global_state.draw_colour);
                 } break;
 
                 case GPU_CMD_DRAW_RECT:
                 {
-                    sl::Colour rect_colour{sl::Orange};
                     sl::rect(sl::screen,gpu_packet.arg1,gpu_packet.arg2,gpu_packet.arg3,
-                        gpu_packet.arg4,rect_colour);
+                        gpu_packet.arg4,global_state.draw_colour);
+                } break;
+
+                case GPU_CMD_DRAW_COLOUR:
+                {
+                    global_state.draw_colour=decode_colour(gpu_packet.arg1);
                 } break;
 
             }

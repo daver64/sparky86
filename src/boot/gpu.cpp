@@ -33,6 +33,11 @@ void clear_screen(uint32_t colour)
     submit_gpu_command(GPU_CMD_CLEAR_SCREEN, colour, 0, 0, 0);
 }
 
+void draw_colour(uint32_t colour)
+{
+    submit_gpu_command(GPU_CMD_DRAW_COLOUR, colour, 0, 0, 0);
+}
+
 void line(int x1,int y1, int x2, int y2)
 {
     submit_gpu_command(GPU_CMD_DRAW_LINE,x1,y1,x2,y2);

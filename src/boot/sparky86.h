@@ -26,7 +26,8 @@ enum GpuOpcode : uint32_t
     GPU_CMD_CLEAR_SCREEN = 1,
     GPU_CMD_DRAW_LINE = 2,
     GPU_CMD_DRAW_RECT = 3,
-    GPU_CMD_PRESENT = 4
+    GPU_CMD_PRESENT = 4,
+    GPU_CMD_DRAW_COLOUR = 5
 };
 
 // Layout must match 32-bit alignment for both Host and Guest
@@ -76,6 +77,7 @@ static inline bool quit_requested()
 
 void submit_gpu_command(uint32_t opcode, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4);
 void clear_screen(uint32_t colour);
+void draw_colour(uint32_t colour);
 void line(int x1,int y1, int x2, int y2);
 void rect(int x, int y, int width, int height);
 void present();
