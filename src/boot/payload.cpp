@@ -37,6 +37,10 @@ struct GpuPacket
     uint32_t arg4; // Y2 / Height
 };
 
+// Packs a colour as 0xRRGGBBAA, the format the host's GPU expects
+#define rgba(r, g, b, a) \
+    ((((uint32_t)(r) & 0xFF) << 24) | (((uint32_t)(g) & 0xFF) << 16) | (((uint32_t)(b) & 0xFF) << 8) | ((uint32_t)(a) & 0xFF))
+
 #define SHARED_RAM_BASE 0x000A0000
 
 // Helper references pointing to the control structure registers mapped in 32-bit pmode
@@ -96,7 +100,7 @@ extern "C" void _start()
     while(!quit_requested())
     {
         // Clear screen with a background color hex code
-        submit_gpu_command(GPU_CMD_CLEAR_SCREEN, 0xFF0000FF, 0, 0, 0);
+        submit_gpu_command(GPU_CMD_CLEAR_SCREEN, rgba(0x50, 0x50, 0x50, 0xFF), 0, 0, 0);
 
         // Draw a bounding frame line from (10, 20) to (300, 20)
         submit_gpu_command(GPU_CMD_DRAW_LINE, 10, 20, 300, 20);

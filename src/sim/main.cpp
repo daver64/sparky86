@@ -46,6 +46,7 @@ int main()
         std::cerr << "Missing binary payload: pmode_core.bin\n";
         return -1;
     }
+    sl::set_window_title("Sparky86!");
     std::vector<uint8_t> payload((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
     global_state.cores.emplace_back(new X86Cpu(global_state.system_bus,0));
@@ -72,6 +73,21 @@ int main()
                 {
                     sl::Colour colour=decode_colour(gpu_packet.arg1);
                     sl::clear_to_colour(sl::screen, colour);
+                } break;
+
+                case GPU_CMD_DRAW_LINE:
+                {
+                    sl::Colour line_colour{sl::Green};
+                    sl::line(sl::screen,
+                        gpu_packet.arg1,gpu_packet.arg2,
+                        gpu_packet.arg3,gpu_packet.arg4,line_colour);
+                } break;
+
+                case GPU_CMD_DRAW_RECT:
+                {
+                    sl::Colour rect_colour{sl::Orange};
+                    sl::rect(sl::screen,gpu_packet.arg1,gpu_packet.arg2,gpu_packet.arg3,
+                        gpu_packet.arg4,rect_colour);
                 } break;
 
             }
