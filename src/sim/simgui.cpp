@@ -2,8 +2,21 @@
 #include "keymap.h"
 #include "system_bus.h"
 #include "x86cpu.h"
+#include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <mutex>
+#include <sstream>
+#include <string>
+#include <thread>
+#include <vector>
+
+// Provided by main.cpp: reload pmode_core.bin into a fresh guest and start it
+bool restart_guest(bool paused);
 
 // Registers can only be read while the CPU is parked, so the last parked snapshot is kept.
 static void draw_registers_window(X86Cpu &cpu)
@@ -84,12 +97,189 @@ static void draw_memory_window(X86Cpu &cpu)
 
 TextEditor editor;
 TextEditor::ErrorMarkers markers;
-const char *fileToEdit = "src/boot/boot.asm";
+
+namespace fs = std::filesystem;
+static const fs::path boot_dir = fs::path(SPARKY_SOURCE_DIR) / "src" / "boot";
+
+static std::string current_file; // file name within src/boot
+static bool dirty = false;
+static std::string pending_open; // file waiting for the "discard changes?" answer
+static std::string status_msg;
+
+static std::mutex build_mutex;
+static std::string build_log;
+static std::atomic<bool> build_running{false};
+static std::atomic<bool> build_done{false};
+static std::atomic<bool> build_ok{false};
+static bool execute_after = false;
+static bool execute_paused = false;
+static bool show_build_log = false;
+static std::thread build_thread;
+
+static bool allowed_extension(const fs::path &p)
+{
+    const std::string ext = p.extension().string();
+    return ext == ".asm" || ext == ".cpp" || ext == ".ld" || ext == ".h" || ext == ".c";
+}
+
+static std::vector<std::string> list_boot_files()
+{
+    std::vector<std::string> files;
+    std::error_code ec;
+    for (const auto &entry : fs::directory_iterator(boot_dir, ec))
+        if (entry.is_regular_file() && allowed_extension(entry.path()))
+            files.push_back(entry.path().filename().string());
+    std::sort(files.begin(), files.end());
+    return files;
+}
+
+bool open_file(const std::string &name)
+{
+    std::ifstream in(boot_dir / name, std::ios::binary);
+    if (!in)
+    {
+        status_msg = "Could not open " + name;
+        return false;
+    }
+    editor.SetText(std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>()));
+    const std::string ext = fs::path(name).extension().string();
+    if (ext == ".cpp" || ext == ".h")
+    {
+        editor.SetColorizerEnable(true);
+        editor.SetLanguageDefinition(TextEditor::LanguageDefinition::CPlusPlus());
+    }
+    else if (ext == ".c")
+    {
+        editor.SetColorizerEnable(true);
+        editor.SetLanguageDefinition(TextEditor::LanguageDefinition::C());
+    }
+    else
+        editor.SetColorizerEnable(false); // no highlighter for asm or linker scripts
+    current_file = name;
+    dirty = false;
+    status_msg.clear();
+    return true;
+}
+
+static bool save_file()
+{
+    if (current_file.empty())
+        return false;
+    std::ofstream out(boot_dir / current_file, std::ios::binary | std::ios::trunc);
+    if (!out)
+    {
+        status_msg = "Could not write " + current_file;
+        return false;
+    }
+    out << editor.GetText();
+    out.flush();
+    if (!out)
+    {
+        status_msg = "Error writing " + current_file;
+        return false;
+    }
+    dirty = false;
+    status_msg = "Saved " + current_file;
+    return true;
+}
+
+static void append_log(const std::string &text)
+{
+    std::lock_guard<std::mutex> lock(build_mutex);
+    build_log += text;
+}
+
+// Rebuilds the boot image on a worker thread so the UI stays responsive
+static void start_build(bool then_execute, bool paused)
+{
+    if (build_running)
+        return;
+    if (dirty && !save_file())
+    {
+        show_build_log = true;
+        append_log("Build cancelled: " + status_msg + "\n");
+        return;
+    }
+    if (build_thread.joinable())
+        build_thread.join();
+    {
+        std::lock_guard<std::mutex> lock(build_mutex);
+        build_log.clear();
+    }
+    build_running = true;
+    build_done = false;
+    execute_after = then_execute;
+    execute_paused = paused;
+    show_build_log = true;
+    build_thread = std::thread([] {
+        const std::string cmd = std::string("cmake --build \"") + SPARKY_BUILD_DIR + "\" --target boot 2>&1";
+        FILE *pipe = popen(cmd.c_str(), "r");
+        if (!pipe)
+        {
+            append_log("Failed to run cmake\n");
+            build_ok = false;
+            build_done = true;
+            return;
+        }
+        char buf[512];
+        while (fgets(buf, sizeof(buf), pipe))
+            append_log(buf);
+        const int rc = pclose(pipe);
+        build_ok = (rc == 0);
+        append_log(rc == 0 ? "\n--- Build succeeded ---\n" : "\n--- Build FAILED ---\n");
+        build_done = true;
+    });
+}
+
+// Runs on the UI thread once per frame
+static void poll_build()
+{
+    if (!build_done.exchange(false))
+        return;
+    if (build_thread.joinable())
+        build_thread.join();
+    build_running = false;
+    if (build_ok && execute_after)
+    {
+        if (restart_guest(execute_paused))
+            append_log("--- Guest restarted ---\n");
+        else
+            append_log("--- Could not load pmode_core.bin ---\n");
+    }
+    execute_after = false;
+}
+
+void simgui_shutdown()
+{
+    if (build_thread.joinable())
+        build_thread.join();
+}
+
+static void draw_build_window()
+{
+    if (!show_build_log)
+        return;
+    ImGui::SetNextWindowSize(ImVec2(640, 240), ImGuiCond_FirstUseEver);
+    ImGui::Begin("Build output", &show_build_log);
+    std::string log;
+    {
+        std::lock_guard<std::mutex> lock(build_mutex);
+        log = build_log;
+    }
+    ImGui::BeginChild("log", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+    ImGui::TextUnformatted(log.c_str());
+    if (build_running)
+        ImGui::SetScrollHereY(1.0f);
+    ImGui::EndChild();
+    ImGui::End();
+}
+
 void update_editor(X86Cpu &cpu)
 {
 
 
         sl::gui_new_frame();
+        poll_build();
         auto cpos = editor.GetCursorPosition();
         ImGui::Begin("Code", nullptr, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_MenuBar);
         ImGui::SetWindowSize(ImVec2(800, 600), ImGuiCond_FirstUseEver);
@@ -97,13 +287,33 @@ void update_editor(X86Cpu &cpu)
         {
             if (ImGui::BeginMenu("File"))
             {
-                if (ImGui::MenuItem("Save"))
+                if (ImGui::BeginMenu("Open"))
                 {
-                    auto textToSave = editor.GetText();
-                    /// save text....
+                    for (const auto &name : list_boot_files())
+                        if (ImGui::MenuItem(name.c_str(), nullptr, name == current_file))
+                        {
+                            if (dirty)
+                                pending_open = name;
+                            else
+                                open_file(name);
+                        }
+                    ImGui::EndMenu();
                 }
-                //if (ImGui::MenuItem("Quit", "Alt-F4"))
-                //    break;
+                if (ImGui::MenuItem("Save", "Ctrl-S", nullptr, !current_file.empty() && dirty))
+                    save_file();
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Build"))
+            {
+                const bool idle = !build_running;
+                if (ImGui::MenuItem("Make", nullptr, nullptr, idle))
+                    start_build(false, false);
+                if (ImGui::MenuItem("Execute", nullptr, nullptr, idle))
+                    start_build(true, false);
+                if (ImGui::MenuItem("Execute paused (step)", nullptr, nullptr, idle))
+                    start_build(true, true);
+                ImGui::Separator();
+                ImGui::MenuItem("Show build output", nullptr, &show_build_log);
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Edit"))
@@ -150,13 +360,54 @@ void update_editor(X86Cpu &cpu)
             ImGui::EndMenuBar();
         }
 
+        if (!pending_open.empty())
+        {
+            ImGui::OpenPopup("Unsaved changes");
+        }
+        if (ImGui::BeginPopupModal("Unsaved changes", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        {
+            ImGui::Text("Discard unsaved changes to %s?", current_file.c_str());
+            if (ImGui::Button("Save and open") && save_file())
+            {
+                open_file(pending_open);
+                pending_open.clear();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Discard"))
+            {
+                open_file(pending_open);
+                pending_open.clear();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel"))
+            {
+                pending_open.clear();
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
+
+        if (!current_file.empty() && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+            ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false))
+            save_file();
+
         ImGui::Text("%6d/%-6d %6d lines  | %s | %s | %s | %s", cpos.mLine + 1, cpos.mColumn + 1, editor.GetTotalLines(),
                     editor.IsOverwrite() ? "Ovr" : "Ins", editor.CanUndo() ? "*" : " ",
-                    editor.GetLanguageDefinition().mName.c_str(), fileToEdit);
+                    current_file.c_str(), dirty ? "modified" : "saved");
+        if (!status_msg.empty())
+        {
+            ImGui::SameLine();
+            ImGui::TextDisabled("%s", status_msg.c_str());
+        }
 
         editor.Render("TextEditor");
+        if (editor.IsTextChanged())
+            dirty = true;
         ImGui::End();
 
+        draw_build_window();
         draw_registers_window(cpu);
         draw_memory_window(cpu);
 

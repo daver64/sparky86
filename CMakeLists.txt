@@ -107,6 +107,11 @@ if(BUILD_SIM)
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     )
 
+    target_compile_definitions(sparky86 PRIVATE
+        SPARKY_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
+        SPARKY_BUILD_DIR="${CMAKE_BINARY_DIR}"
+    )
+
     target_include_directories(sparky86 PRIVATE
         "${SIM_DIR}"
         "${SIMLIB_INCLUDE_DIR}"

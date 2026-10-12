@@ -97,6 +97,16 @@ class SystemBus
             m_gpu_dirty = true;
         }
     }
+    // Returns the bus to its power-on state; only call while no CPU thread is running
+    void reset()
+    {
+        std::lock_guard<std::mutex> lock(m_bus_lock);
+        std::fill(m_shared_ram.begin(), m_shared_ram.end(), 0);
+        m_gpu_dirty = false;
+        m_quit_requested = false;
+        m_key_queue.clear();
+        m_key_pending = 0;
+    }
     void request_quit() { m_quit_requested = true; }
     bool quit_requested() const { return m_quit_requested; }
 

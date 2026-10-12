@@ -14,8 +14,9 @@
 // gui interface, will go in simgui.h eventually...
 void update_editor(X86Cpu &cpu);
 extern TextEditor editor;
-extern TextEditor::ErrorMarkers markers;
-extern const char *fileToEdit ;
+bool open_file(const std::string &name);
+void simgui_shutdown();
+bool restart_guest(bool paused);
 
 struct GlobalState
 {
@@ -36,9 +37,40 @@ struct GlobalState
     int text_y{0};
     uint32_t text_len{0};
     std::string text;
+    std::thread cpu_thread;
+    std::vector<GpuPacket> gpu_packets;
 };
 
 GlobalState global_state;
+
+// Replaces the running guest with a fresh one loaded from the rebuilt pmode_core.bin.
+// Must be called from the UI thread, which is the only user of the core pointer.
+bool restart_guest(bool paused)
+{
+    std::ifstream file(std::string(SPARKY_SOURCE_DIR) + "/pmode_core.bin", std::ios::binary);
+    if (!file)
+        return false;
+    std::vector<uint8_t> payload((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+    // The old guest is discarded, so there is no point waiting for it to quit politely
+    global_state.cores[0]->force_stop();
+    global_state.cpu_thread.join();
+    delete global_state.cores[0];
+
+    global_state.system_bus.reset();
+    global_state.gpu_packets.clear();
+    global_state.text_len = 0;
+    global_state.text.clear();
+    global_state.draw_colour = sl::Colour{};
+
+    X86Cpu *cpu = new X86Cpu(global_state.system_bus, 0);
+    cpu->load_program(payload, 0x0000);
+    cpu->set_up_real_mode(0x0000, 0x0000, 0x0000, 0xFFFF);
+    cpu->set_paused(paused);
+    global_state.cores[0] = cpu;
+    global_state.cpu_thread = std::thread(&X86Cpu::run, cpu);
+    return true;
+}
 
 sl::Colour decode_colour(uint32_t pixel)
 {
@@ -106,30 +138,7 @@ int main(int argc, char **argv)
     editor.SetLanguageDefinition(lang);
     // editor.SetPalette(TextEditor::GetLightPalette());
 
-    // error markers
-    
-    markers.insert(
-        std::make_pair<int, std::string>(6, "Example error here:\nInclude file not found: \"TextEditor.h\""));
-    markers.insert(std::make_pair<int, std::string>(41, "Another example error"));
-    editor.SetErrorMarkers(markers);
-
-    // "breakpoint" markers
-    // TextEditor::Breakpoints bpts;
-    // bpts.insert(24);
-    // bpts.insert(47);
-    // editor.SetBreakpoints(bpts);
-
-    
-    //	static const char* fileToEdit = "test.cpp";
-
-    {
-        std::ifstream t(fileToEdit);
-        if (t.good())
-        {
-            std::string str((std::istreambuf_iterator<char>(t)), std::istreambuf_iterator<char>());
-            editor.SetText(str);
-        }
-    }
+    open_file("boot.asm");
 
     sl::set_window_title("Sparky86!");
     std::vector<uint8_t> payload((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
@@ -139,8 +148,7 @@ int main(int argc, char **argv)
     global_state.cores[0]->set_up_real_mode(0x0000, 0x0000, 0x0000, 0xFFFF);
     global_state.cores[0]->set_paused(start_paused);
 
-    std::thread cpu_thread(&X86Cpu::run, global_state.cores[0]);
-    std::vector<GpuPacket> gpu_packets;
+    global_state.cpu_thread = std::thread(&X86Cpu::run, global_state.cores[0]);
 
     while (running)
     {
@@ -185,8 +193,8 @@ int main(int argc, char **argv)
         }
 
         sl::clear_to_colour(sl::screen, sl::Colour{146, 200, 62});
-        global_state.system_bus.process_gpu_queue(gpu_packets);
-        for (auto gpu_packet : gpu_packets)
+        global_state.system_bus.process_gpu_queue(global_state.gpu_packets);
+        for (auto gpu_packet : global_state.gpu_packets)
         {
             switch (gpu_packet.opcode)
             {
@@ -249,8 +257,6 @@ int main(int argc, char **argv)
 
         sl::show_video_bitmap();
         sl::end_frame();
-        if (global_state.cores[0]->is_halted())
-            break;
     }
     // Ask the guest to exit; force-stop the emulator if it doesn't comply
     global_state.system_bus.request_quit();
@@ -262,8 +268,9 @@ int main(int argc, char **argv)
         std::cerr << "Guest ignored quit request, forcing stop\n";
         global_state.cores[0]->force_stop();
     }
-    cpu_thread.join();
+    global_state.cpu_thread.join();
 
+    simgui_shutdown();
     sl::gui_shutdown();
     sl::wait_for_graphics();
     sl::shutdown();

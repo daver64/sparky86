@@ -71,7 +71,7 @@ bool key_pop(uint32_t *event);   // next press/release event, false if none
 
 ### Halting
 
-`hlt` with interrupts enabled idles the guest until an interrupt arrives (or the host requests quit), so a guest can sleep between frames. `hlt` with interrupts disabled stops the emulator, because nothing could ever wake it. That is what happens when `_start` returns, and in the default handler for CPU faults and unhandled vectors.
+`hlt` with interrupts enabled idles the guest until an interrupt arrives (or the host requests quit), so a guest can sleep between frames. `hlt` with interrupts disabled stops the emulator, because nothing could ever wake it. That is what happens when `_start` returns, and in the default handler for CPU faults and unhandled vectors. A halted guest no longer closes the window, so you can edit and use **Build > Execute** to run it again.
 
 ### Quitting
 
@@ -117,7 +117,11 @@ These keys are handled by the host and are not sent to the guest. While paused, 
 
 The host also draws three Dear ImGui windows (via simlib) over the display:
 
-- **Code**: a text editor (currently loading `src/boot/boot.asm`) with undo/redo, clipboard and palette options. Saving is not implemented yet.
+- **Code**: a text editor for the guest sources in `src/boot/` (`.asm`, `.cpp`, `.c`, `.h`, `.ld`; it opens `boot.asm` at startup).
+  - **File > Open** lists the editable files; opening with unsaved changes asks before discarding them. **File > Save** (or Ctrl-S) writes the file back.
+  - **Build > Make** saves the current file and rebuilds the boot image (`cmake --build <build dir> --target boot`), showing the compiler output in a **Build output** window.
+  - **Build > Execute** does a Make and, if it succeeds, replaces the running guest with the new `pmode_core.bin` and starts it from reset. **Execute paused (step)** does the same but leaves the CPU paused for single-stepping.
+  - A new guest `.cpp` file still has to be added to `BOOT_UNITS` in `CMakeLists.txt` before Make will build it.
 - **Registers**: instruction count, `EAX`-`EDX`, `ESI`, `EDI`, `EBP`, `ESP`, `EIP`, the code segment base, `EFLAGS` with each of `CF PF AF ZF SF TF IF DF OF` highlighted when set, and the next 8 opcode bytes. Registers can only be read while the CPU is paused, so while it runs the window shows the last paused values.
 - **Memory**: a hex dump of the guest's 64KB private RAM, 16 bytes per row with ASCII on the right. Type a hex address to move around, or press **EIP** to jump to the current instruction. It does not show the shared RAM at `0xA0000`, and bytes may change mid-refresh while the guest is running.
 
