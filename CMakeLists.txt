@@ -19,7 +19,7 @@ if(BUILD_BOOT)
     file(GLOB BOOT_ASM_FILES "${BOOT_DIR}/*.asm")
     set(BOOT_OBJ    "${BOOT_DIR}/boot.o")
     # C++ units compiled into the guest image
-    set(BOOT_UNITS payload gpu input)
+    set(BOOT_UNITS payload gpu input math)
     file(GLOB BOOT_HEADERS "${BOOT_DIR}/*.h")
     set(BOOT_CXX_FLAGS -m32 -march=i386 -ffreestanding -O2 -fno-pic -fno-pie -fno-stack-protector
                          -fno-exceptions -fno-rtti -mno-80387 -mno-mmx -mno-sse)

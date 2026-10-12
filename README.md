@@ -42,7 +42,7 @@ The guest publishes commands to a ring buffer in shared RAM and rings a doorbell
 
 ### Text
 
-Guest code calls `textprintf(x, y, fmt, ...)` (see `src/boot/gpu.cpp`). The guest formats the string itself with a built-in `vsnprintf` supporting `%d %i %u %x %X %c %s %%` with width, `0` padding and `-` left-align, truncated to 128 characters. It is sent as one text-begin packet followed by text-data packets, and the host draws it with the default simlib monospace font in the current draw colour.
+Guest code calls `textprintf(x, y, fmt, ...)` (see `src/boot/gpu.cpp`). The guest formats the string itself with a built-in `vsnprintf` supporting `%d %i %u %x %X %c %s %f %%` (see the Maths unit for `%f`) with width, `0` padding and `-` left-align, truncated to 128 characters. It is sent as one text-begin packet followed by text-data packets, and the host draws it with the default simlib monospace font in the current draw colour.
 
 ### I/O ports
 
@@ -51,8 +51,23 @@ Guest code calls `textprintf(x, y, fmt, ...)` (see `src/boot/gpu.cpp`). The gues
 | `0x10` | out | GPU doorbell: tells the host new packets are queued |
 | `0x40` | in  | System status: bit 0 set means the host wants the guest to quit |
 | `0x50` | in  | Keyboard: each read pops one event; `0` means the queue is empty |
+| `0x60` | out | Maths unit operand A |
+| `0x64` | out | Maths unit operand B |
+| `0x68` | out/in | Maths unit: writing an opcode executes it; reading returns the result |
+| `0x6C` | in  | Maths unit status: bit 0 set means the last operation was invalid |
 
 Unmapped ports read as `0xFFFFFFFF`.
+
+### Maths unit
+
+The emulated CPU has no FPU (and guests are built with `-mno-80387 -mno-sse`), so floating point is done by the host. Values are IEEE-754 single-precision bit patterns held in a `uint32_t` (`fp32`). The guest latches operands, writes an opcode, and reads the result back; it completes immediately because port I/O is handled synchronously.
+
+```cpp
+fp32 angle = fp_div(FP_PI, fp_from_int(4));
+int y = fp_to_int(fp_mul(fp_sin(angle), fp_from_int(100)));
+```
+
+Operations (`src/boot/math.cpp`, declared in `sparky86.h`): `fp_from_int`, `fp_to_int` (truncates, saturates, NaN gives 0), `fp_add`, `fp_sub`, `fp_mul`, `fp_div`, `fp_sqrt`, `fp_sin`, `fp_cos`, `fp_tan` (radians), `fp_atan2(y, x)`, `fp_pow`, `fp_abs`, `fp_floor`, `fp_ceil`, `fp_min`, `fp_max`. Constants: `FP_ZERO`, `FP_ONE`, `FP_HALF`, `FP_TWO`, `FP_NEG_ONE`, `FP_PI`, `FP_HALF_PI`, `FP_TWO_PI`. `fp_invalid()` reports whether the last operation produced NaN/infinity or used a bad opcode. Float literals cannot be used in guest code; use the constants or build values with `fp_from_int` and `fp_div`. `textprintf` supports `%f` for an `fp32` argument, with width, `0`, `-` and a precision of 0-6 (default 6), e.g. `textprintf(10, 10, "%.2f", fp_sqrt(FP_TWO))` prints `1.41`. Rounding is half up, values of 2^31 or more saturate, and NaN/infinity print as `nan`/`inf`. Pass the `fp32` itself, not a C `float`. The host side is `src/sim/mathunit.h`.
 
 ### Interrupts and keyboard
 

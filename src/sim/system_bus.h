@@ -7,6 +7,7 @@
 #include <sl.h>
 #include <utility>
 #include <vector>
+#include "mathunit.h"
 // Fixed offsets relative to the start of Shared RAM (0xA0000)
 constexpr uint32_t GPU_REG_READ_PTR = 0x0000;  // Host updates this
 constexpr uint32_t GPU_REG_WRITE_PTR = 0x0004; // Guest updates this
@@ -56,6 +57,7 @@ class SystemBus
     bool m_gpu_dirty = false;
     std::atomic<bool> m_quit_requested{false};
     std::deque<uint32_t> m_key_queue;
+    MathUnit m_math; // CPU thread only
     std::atomic<bool> m_vblank_pending{false};
     std::atomic<size_t> m_key_pending{0}; // lock-free mirror of m_key_queue.size() for the CPU thread
 
@@ -93,6 +95,11 @@ class SystemBus
 
     void write_io(uint16_t port, uint32_t value)
     {
+        if (m_math.handles(port))
+        {
+            m_math.write(port, value);
+            return;
+        }
         std::lock_guard<std::mutex> lock(m_bus_lock);
         if (port == 0x10)
         { // Video Card Doorbell Port
@@ -109,6 +116,7 @@ class SystemBus
         m_key_queue.clear();
         m_key_pending = 0;
         m_vblank_pending = false;
+        m_math.reset();
     }
     void request_quit() { m_quit_requested = true; }
     bool quit_requested() const { return m_quit_requested; }
@@ -142,6 +150,8 @@ class SystemBus
 
     uint32_t read_io(uint16_t port)
     {
+        if (m_math.handles(port))
+            return m_math.read(port);
         if (port == PORT_SYSTEM_STATUS)
             return m_quit_requested ? SYSTEM_STATUS_QUIT : 0;
         std::lock_guard<std::mutex> lock(m_bus_lock);

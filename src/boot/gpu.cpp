@@ -65,7 +65,8 @@ static void put_char(char *buf, size_t size, size_t &pos, char c)
     pos++;
 }
 
-// Minimal printf: %d %i %u %x %X %c %s %% with width, '0' padding and '-' alignment.
+// Minimal printf: %d %i %u %x %X %c %s %f %% with width, '0' padding and '-' alignment.
+// %f takes an fp32 (float bit pattern, see the maths unit) and honours a precision of 0-6 (default 6).
 // Returns the length the full output would have had, like snprintf.
 int vsnprintf(char *buf, size_t size, const char *fmt, __builtin_va_list ap)
 {
@@ -91,8 +92,16 @@ int vsnprintf(char *buf, size_t size, const char *fmt, __builtin_va_list ap)
         int width = 0;
         while (*fmt >= '0' && *fmt <= '9')
             width = width * 10 + (*fmt++ - '0');
+        int prec = -1;
+        if (*fmt == '.')
+        {
+            ++fmt;
+            prec = 0;
+            while (*fmt >= '0' && *fmt <= '9')
+                prec = prec * 10 + (*fmt++ - '0');
+        }
 
-        char tmp[12];
+        char tmp[24];
         const char *str = tmp;
         int len = 0;
         bool negative = false;
@@ -133,6 +142,60 @@ int vsnprintf(char *buf, size_t size, const char *fmt, __builtin_va_list ap)
                 tmp[len++] = '-';
             while (n)
                 tmp[len++] = rev[--n];
+            break;
+        }
+        case 'f':
+        {
+            fp32 v = __builtin_va_arg(ap, uint32_t);
+            if (prec < 0 || prec > 6)
+                prec = 6;
+            negative = (v >> 31) != 0;
+            if (((v >> 23) & 0xFF) == 0xFF) // NaN or infinity
+            {
+                const char *word = (v & 0x7FFFFF) ? "nan" : "inf";
+                negative = negative && (v & 0x7FFFFF) == 0;
+                if (negative)
+                    tmp[len++] = '-';
+                while (*word)
+                    tmp[len++] = *word++;
+                break;
+            }
+            int pow10 = 1;
+            for (int i = 0; i < prec; ++i)
+                pow10 *= 10;
+            const fp32 scale = fp_from_int(pow10);
+            // Round half up at the requested precision, then split into integer and fraction
+            const fp32 r = fp_add(fp_abs(v), fp_div(FP_HALF, scale));
+            const fp32 ipf = fp_floor(r);
+            int ip = fp_to_int(ipf); // saturates at 2147483647
+            int frac = fp_to_int(fp_floor(fp_mul(fp_sub(r, ipf), scale)));
+            if (frac >= pow10)
+                frac = pow10 - 1;
+            char rev[12];
+            int n = 0;
+            do
+            {
+                rev[n++] = (char)('0' + ip % 10);
+                ip /= 10;
+            } while (ip);
+            if (negative && zero && !left)
+            {
+                put_char(buf, size, pos, '-');
+                width--;
+                negative = false;
+            }
+            if (negative)
+                tmp[len++] = '-';
+            while (n)
+                tmp[len++] = rev[--n];
+            if (prec > 0)
+            {
+                tmp[len++] = '.';
+                for (int d = pow10 / 10; d; d /= 10)
+                {
+                    tmp[len++] = (char)('0' + (frac / d) % 10);
+                }
+            }
             break;
         }
         case 'c':

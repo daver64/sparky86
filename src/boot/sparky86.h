@@ -66,6 +66,11 @@ static inline void outw(uint16_t port, uint16_t data)
     __asm__ volatile("outw %0, %1" : : "a"(data), "Nd"(port));
 }
 
+static inline void outl(uint16_t port, uint32_t data)
+{
+    __asm__ volatile("outl %0, %1" : : "a"(data), "Nd"(port));
+}
+
 static inline uint32_t inl(uint16_t port)
 {
     uint32_t data;
@@ -110,3 +115,28 @@ void rect(int x, int y, int width, int height);
 void present();
 int vsnprintf(char *buf, size_t size, const char *fmt, __builtin_va_list ap);
 void textprintf(int x, int y, const char *fmt, ...);
+
+// ---- Maths unit (src/boot/math.cpp) ----
+// The guest has no FPU. Floats are held as IEEE-754 single bit patterns in an fp32 and every
+// operation is carried out by the host over I/O ports.
+typedef uint32_t fp32;
+constexpr fp32 FP_ZERO = 0x00000000, FP_ONE = 0x3F800000, FP_HALF = 0x3F000000, FP_TWO = 0x40000000,
+               FP_NEG_ONE = 0xBF800000, FP_PI = 0x40490FDB, FP_HALF_PI = 0x3FC90FDB, FP_TWO_PI = 0x40C90FDB;
+fp32 fp_from_int(int v);
+int fp_to_int(fp32 v); // truncates toward zero
+fp32 fp_add(fp32 a, fp32 b);
+fp32 fp_sub(fp32 a, fp32 b);
+fp32 fp_mul(fp32 a, fp32 b);
+fp32 fp_div(fp32 a, fp32 b);
+fp32 fp_sqrt(fp32 a);
+fp32 fp_sin(fp32 a); // radians
+fp32 fp_cos(fp32 a);
+fp32 fp_tan(fp32 a);
+fp32 fp_atan2(fp32 y, fp32 x);
+fp32 fp_pow(fp32 a, fp32 b);
+fp32 fp_abs(fp32 a);
+fp32 fp_floor(fp32 a);
+fp32 fp_ceil(fp32 a);
+fp32 fp_min(fp32 a, fp32 b);
+fp32 fp_max(fp32 a, fp32 b);
+bool fp_invalid(); // last operation gave NaN/inf or used a bad opcode

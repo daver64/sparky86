@@ -8,6 +8,8 @@ extern "C" void _start()
     int dy=1;
     int max_x=700;
     int max_y=500;
+    fp32 angle = FP_ZERO;
+    const fp32 step = fp_div(FP_PI, fp_from_int(90));
     while(!quit_requested())
     {
         uint32_t key_event;
@@ -42,6 +44,8 @@ extern "C" void _start()
         rect(xpos, ypos, xpos+100, ypos+100);
         draw_colour(rgba(255,0,0,255));
         textprintf(10, 10, "pos %d,%d  arrows steer, hold space to pause", xpos, ypos);
+        angle = fp_add(angle, step);
+        textprintf(10, 30, "sin(angle) = %.3f  sqrt(2) = %.4f  pi = %f", fp_sin(angle), fp_sqrt(FP_TWO), FP_PI);
         present();
     }
 }
