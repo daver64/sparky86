@@ -100,6 +100,8 @@ if(BUILD_SIM)
     add_executable(sparky86
         src/sim/main.cpp
         src/sim/x86cpu.cpp
+        src/sim/simgui.cpp
+        src/sim/TextEditor.cpp
     )
     set_target_properties(sparky86 PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"

@@ -95,6 +95,24 @@ gcc -m32 -march=i386 -ffreestanding -O2 -mno-80387 -mno-mmx -mno-sse -c payload.
 
 and link with a script that emits `OUTPUT_FORMAT("binary")` at origin 0 (see [src/boot/linker.ld](src/boot/linker.ld)). [src/boot/payload.cpp](src/boot/payload.cpp) is a working example that submits GPU commands in a loop until the host asks it to quit.
 
+## Running and debugging
+
+Run from the project root; the program defaults to `pmode_core.bin`:
+
+```
+./sparky86 [--step] [program.bin]
+```
+
+`--step` loads the program paused before its first instruction. Any flat binary can be given as `program.bin`.
+
+| Key | Action |
+|-----|--------|
+| `F5` | Toggle run / pause |
+| `F10` | Pause (if running) and execute one instruction; hold to repeat |
+| `F11` | Pause (if running) and execute 100 instructions |
+
+These keys are handled by the host and are not sent to the guest. While paused, an overlay at the bottom of the window shows the instruction count, the general registers, `EIP`, `EFLAGS` and the raw bytes at `EIP`. The display keeps showing the last completed frame, and key presses are still queued for the guest and delivered as you step. Quitting works while paused.
+
 ## Building
 
 Requirements: `fasm`, `gcc` (with 32-bit support), `binutils`, `g++`, `libx86emu`, `cmake`, and simlib installed under `~/opt` (override with `-DSIMLIB_PREFIX=...`) along with the SDL2, OpenGL, Vulkan, PNG, zlib and SQLite development packages.
@@ -109,11 +127,3 @@ cmake --build build --target sparky86  # simulator only
 Or disable a part at configure time: `-DBUILD_BOOT=OFF` / `-DBUILD_SIM=OFF`.
 
 Outputs `pmode_core.bin` and `sparky86` are placed in the project root.
-
-## Running
-
-Run from the project root so the simulator can find `pmode_core.bin`:
-
-```
-./sparky86
-```

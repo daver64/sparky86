@@ -48,12 +48,46 @@ public:
     bool is_halted() const   { return m_halted; }
     void force_stop()        { m_stop_requested = true; x86emu_stop(m_emu); }
 
+    // ---- Debugger controls (any thread) ----
+    void set_paused(bool paused) { m_paused = paused; }
+    bool is_paused() const       { return m_paused; }
+    // Let the CPU execute n more instructions while paused
+    void step(uint32_t n = 1)    { m_steps += n; }
+    // True while the CPU is parked between instructions, the only time registers may be read safely
+    bool is_parked() const       { return m_parked; }
+    uint64_t instruction_count() const { return m_instr_count; }
+
+    struct Registers {
+        uint32_t eax, ebx, ecx, edx, esi, edi, ebp, esp, eip, eflags, cs_base;
+        uint8_t code[8]; // bytes at the next instruction
+    };
+    Registers registers() {
+        Registers r{};
+        const auto& x = m_emu->x86;
+        r.eax = x.R_EAX; r.ebx = x.R_EBX; r.ecx = x.R_ECX; r.edx = x.R_EDX;
+        r.esi = x.R_ESI; r.edi = x.R_EDI; r.ebp = x.R_EBP; r.esp = x.R_ESP;
+        r.eip = x.R_EIP; r.eflags = x.R_EFLG; r.cs_base = x.R_CS_BASE;
+        for (int i = 0; i < 8; ++i) r.code[i] = read_byte(r.cs_base + r.eip + i);
+        return r;
+    }
+    bool read_local_ram(const uint32_t address, const uint32_t numbytes, std::vector<uint8_t> &bytes)
+    {
+        bytes.clear();
+        if (address >= m_ram.size() || numbytes > m_ram.size() - address)
+            return false; // out of range; nothing returned
+        bytes.assign(m_ram.begin() + address, m_ram.begin() + address + numbytes);
+        return true;
+    }
 private:
     SystemBus& m_bus;
     int m_core_id;
     std::vector<uint8_t> m_ram;
     std::atomic<bool> m_halted;
     std::atomic<bool> m_stop_requested{false};
+    std::atomic<bool> m_paused{false};
+    std::atomic<bool> m_parked{false};
+    std::atomic<uint32_t> m_steps{0};
+    std::atomic<uint64_t> m_instr_count{0};
     x86emu_t* m_emu = nullptr;
 
     // Runs on the CPU thread before every instruction, so raising interrupts here is race free.
@@ -65,6 +99,16 @@ private:
     // Returns non-zero to stop the emulator
     int before_instruction() {
         if (m_stop_requested) return 1;
+        if (m_paused) {
+            // Park until stepped, resumed, or the host wants the guest to quit
+            m_parked = true;
+            while (m_paused && m_steps == 0 && !m_stop_requested && !m_bus.quit_requested())
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            m_parked = false;
+            if (m_stop_requested) return 1;
+            if (m_paused && m_steps > 0) m_steps--;
+        }
+        m_instr_count++;
         deliver_interrupts();
         // A guest "hlt" with interrupts enabled idles until an interrupt or quit request, instead of
         // stopping the emulator. With IF clear (e.g. in the fault handler) it still stops, as the CPU
