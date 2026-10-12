@@ -11,7 +11,7 @@ Programs are flat binaries, so you can write them in C, assembler, or anything e
 | Path | Contents |
 |------|----------|
 | `src/boot/` | Guest code: a real-mode bootstrap (`boot.asm`, fasm) that switches to 32-bit protected mode, plus a freestanding C++ payload (`payload.cpp`), linked into `pmode_core.bin`. |
-| `src/sim/`  | Host simulator: the CPU wrapper (`x86cpu.h/.cpp`), system bus and virtual GPU (`system_bus.h`), and the simlib window (`main.cpp`). |
+| `src/sim/`  | Host simulator: the CPU wrapper (`x86cpu.h/.cpp`), system bus and virtual GPU (`system_bus.h`), the simlib window (`main.cpp`), and the ImGui debugger windows (`simgui.cpp`, `TextEditor.cpp/.h`). |
 
 ## Machine overview (current)
 
@@ -112,6 +112,14 @@ Run from the project root; the program defaults to `pmode_core.bin`:
 | `F11` | Pause (if running) and execute 100 instructions |
 
 These keys are handled by the host and are not sent to the guest. While paused, an overlay at the bottom of the window shows the instruction count, the general registers, `EIP`, `EFLAGS` and the raw bytes at `EIP`. The display keeps showing the last completed frame, and key presses are still queued for the guest and delivered as you step. Quitting works while paused.
+
+### Debugger windows
+
+The host also draws three Dear ImGui windows (via simlib) over the display:
+
+- **Code**: a text editor (currently loading `src/boot/boot.asm`) with undo/redo, clipboard and palette options. Saving is not implemented yet.
+- **Registers**: instruction count, `EAX`-`EDX`, `ESI`, `EDI`, `EBP`, `ESP`, `EIP`, the code segment base, `EFLAGS` with each of `CF PF AF ZF SF TF IF DF OF` highlighted when set, and the next 8 opcode bytes. Registers can only be read while the CPU is paused, so while it runs the window shows the last paused values.
+- **Memory**: a hex dump of the guest's 64KB private RAM, 16 bytes per row with ASCII on the right. Type a hex address to move around, or press **EIP** to jump to the current instruction. It does not show the shared RAM at `0xA0000`, and bytes may change mid-refresh while the guest is running.
 
 ## Building
 
