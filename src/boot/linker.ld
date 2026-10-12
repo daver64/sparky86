@@ -9,8 +9,9 @@ SECTIONS
         *(.text)
     }
 
-    .rodata : { *(.rodata) }
+    .rodata : { *(.rodata*) }
     .data   : { *(.data) }
+    .bss    : { *(.bss) *(COMMON) }
 
     /DISCARD/ : {
         *(*.eh_frame)

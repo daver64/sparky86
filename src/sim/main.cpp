@@ -1,4 +1,5 @@
 
+#include "keymap.h"
 #include "system_bus.h"
 #include "x86cpu.h"
 #include <algorithm>
@@ -68,6 +69,13 @@ int main()
         {
             if (event.type() == sl::Event::Type::quit)
                 running = false;
+            if (event.type() == sl::Event::Type::key_down || event.type() == sl::Event::Type::key_up)
+            {
+                uint8_t code = map_key_to_guest(event.key());
+                if (code)
+                    global_state.system_bus.push_key_event(code, event.type() == sl::Event::Type::key_down,
+                                                           event.key_repeat());
+            }
             sl::display_handle_event(event);
         }
 

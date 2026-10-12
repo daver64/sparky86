@@ -4,6 +4,9 @@ section '.text' align 8 ; <-- Add 'align 8' here to allow alignment directives i
 
 public start        ; Exposes our execution start entry hook to the linker
 extrn _start        ; Correct FASM spelling for importing an external symbol
+extrn keyboard_isr  ; C handler for IRQ vector 0x21
+
+IDT_ENTRIES = 0x22  ; vectors 0x00-0x21
 
 use16               ; Emit initial real-mode instruction sets
 start:
@@ -29,11 +32,50 @@ protected_entry:
     mov ss, ax
     mov esp, 0x0000FFFF ; Map out a clean stack space at the top limit of 64KB
 
+    ; Point every vector at default_isr, then install the keyboard handler
+    mov ebx, default_isr
+    mov edi, idt_start
+    mov ecx, IDT_ENTRIES
+.fill_idt:
+    call set_gate
+    add edi, 8
+    loop .fill_idt
+
+    mov ebx, keyboard_stub
+    mov edi, idt_start + 0x21 * 8
+    call set_gate
+
+    lidt [idt_descriptor]
+    sti                 ; Interrupts on: the host can now deliver keyboard IRQs
+
     call _start         ; Execute our GCC application framework entry loop
 
 .halt_loop:
+    cli                 ; _start returned: with IF clear, hlt stops the emulator
     hlt
     jmp .halt_loop
+
+; edi = gate address, ebx = handler offset: builds a 32-bit interrupt gate (selector 0x08)
+set_gate:
+    mov [edi], bx
+    mov word [edi + 2], 0x08
+    mov word [edi + 4], 0x8E00
+    mov eax, ebx
+    shr eax, 16
+    mov [edi + 6], ax
+    ret
+
+; Unhandled vector or CPU fault: halt, which stops the guest
+default_isr:
+    hlt
+    jmp default_isr
+
+keyboard_stub:
+    pushad
+    cld
+    call keyboard_isr
+    popad
+    iretd
 
 align 8
 gdt_start:
@@ -49,3 +91,11 @@ gdt_end:
 gdt_descriptor:
     dw gdt_end - gdt_start - 1
     dd gdt_start
+
+idt_descriptor:
+    dw IDT_ENTRIES * 8 - 1
+    dd idt_start
+
+align 8
+idt_start:
+    db IDT_ENTRIES * 8 dup 0

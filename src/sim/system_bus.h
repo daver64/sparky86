@@ -1,6 +1,7 @@
 #pragma once
 #include <atomic>
 #include <cstdint>
+#include <deque>
 #include <iostream>
 #include <mutex>
 #include <sl.h>
@@ -13,6 +14,14 @@ constexpr uint32_t GPU_RING_BASE = 0x0010;     // Packets start at 0xA0010
 constexpr uint32_t GPU_RING_MAX_SLOTS = 256;   // Max packets in flight
 constexpr uint16_t PORT_SYSTEM_STATUS = 0x40;  // Guest reads: bit 0 set = host requests quit
 constexpr uint32_t SYSTEM_STATUS_QUIT = 1;
+
+// Keyboard: reading the port pops one event (0 = queue empty).
+// Event word: bits 0-7 key code (USB HID usage), bit 8 pressed, bit 9 auto-repeat.
+constexpr uint16_t PORT_KEYBOARD_DATA = 0x50;
+constexpr uint8_t IRQ_VECTOR_KEYBOARD = 0x21;
+constexpr uint32_t KEY_EVENT_PRESSED = 1u << 8;
+constexpr uint32_t KEY_EVENT_REPEAT = 1u << 9;
+constexpr size_t KEY_QUEUE_MAX = 64;
 
 // GPU Opcode Constants
 enum GpuOpcode : uint32_t
@@ -45,6 +54,8 @@ class SystemBus
     std::vector<uint8_t> m_shared_ram;
     bool m_gpu_dirty = false;
     std::atomic<bool> m_quit_requested{false};
+    std::deque<uint32_t> m_key_queue;
+    std::atomic<size_t> m_key_pending{0}; // lock-free mirror of m_key_queue.size() for the CPU thread
 
     // Thread-safe helpers to read/write 32-bit integers from raw memory vectors
     uint32_t read_ram32(uint32_t offset)
@@ -87,6 +98,21 @@ class SystemBus
         }
     }
     void request_quit() { m_quit_requested = true; }
+    bool quit_requested() const { return m_quit_requested; }
+
+    // Called from the host thread; events are dropped if the guest lets the queue fill up
+    void push_key_event(uint8_t code, bool pressed, bool repeat)
+    {
+        std::lock_guard<std::mutex> lock(m_bus_lock);
+        if (m_key_queue.size() >= KEY_QUEUE_MAX)
+            return;
+        m_key_queue.push_back(code | (pressed ? KEY_EVENT_PRESSED : 0) | (repeat ? KEY_EVENT_REPEAT : 0));
+        m_key_pending = m_key_queue.size();
+    }
+
+    // Called by the CPU thread between instructions: returns the vector of a pending
+    // interrupt, or -1. Level triggered: stays pending until the guest drains the device.
+    int pending_irq() const { return m_key_pending.load() ? IRQ_VECTOR_KEYBOARD : -1; }
 
     uint32_t read_io(uint16_t port)
     {
@@ -96,6 +122,15 @@ class SystemBus
 
         switch (port)
         {
+        case PORT_KEYBOARD_DATA:
+        {
+            if (m_key_queue.empty())
+                return 0;
+            uint32_t event = m_key_queue.front();
+            m_key_queue.pop_front();
+            m_key_pending = m_key_queue.size();
+            return event;
+        }
         //case 0x30:                  // Player 1 Controller input port
         //    return m_p1_controller; // Make sure m_p1_controller is defined in your fields (default 0xFF)
         default:

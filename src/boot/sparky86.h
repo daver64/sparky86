@@ -79,6 +79,29 @@ static inline bool quit_requested()
     return inl(0x0040) & 1;
 }
 
+// ---- Keyboard (src/boot/input.cpp) ----
+constexpr uint16_t PORT_KEYBOARD_DATA = 0x0050;
+
+// Key codes are USB HID usage IDs
+enum KeyCode : uint8_t
+{
+    KEY_A = 4, KEY_B, KEY_C, KEY_D, KEY_E, KEY_F, KEY_G, KEY_H, KEY_I, KEY_J, KEY_K, KEY_L, KEY_M,
+    KEY_N, KEY_O, KEY_P, KEY_Q, KEY_R, KEY_S, KEY_T, KEY_U, KEY_V, KEY_W, KEY_X, KEY_Y, KEY_Z,
+    KEY_1 = 30, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8, KEY_9, KEY_0,
+    KEY_ENTER = 40, KEY_ESCAPE, KEY_BACKSPACE, KEY_TAB, KEY_SPACE,
+    KEY_F1 = 58, KEY_F2, KEY_F3, KEY_F4, KEY_F5, KEY_F6, KEY_F7, KEY_F8, KEY_F9, KEY_F10, KEY_F11, KEY_F12,
+    KEY_RIGHT = 79, KEY_LEFT, KEY_DOWN, KEY_UP,
+    KEY_LCTRL = 224, KEY_LSHIFT, KEY_LALT, KEY_RCTRL = 228, KEY_RSHIFT, KEY_RALT
+};
+
+// Event word returned by key_pop(): bits 0-7 key code, bit 8 pressed, bit 9 auto-repeat
+#define KEY_EVENT_CODE(e) ((uint8_t)((e) & 0xFF))
+#define KEY_EVENT_PRESSED(e) (((e) >> 8) & 1)
+#define KEY_EVENT_REPEAT(e) (((e) >> 9) & 1)
+
+bool key_down(uint8_t code);            // current state of a key, maintained by the keyboard interrupt
+bool key_pop(uint32_t *event);          // next queued key event; false if none
+
 void submit_gpu_command(uint32_t opcode, uint32_t a1, uint32_t a2, uint32_t a3, uint32_t a4);
 void clear_screen(uint32_t colour);
 void draw_colour(uint32_t colour);

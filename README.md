@@ -50,8 +50,28 @@ Guest code calls `textprintf(x, y, fmt, ...)` (see `src/boot/gpu.cpp`). The gues
 |------|-----|-------------|
 | `0x10` | out | GPU doorbell: tells the host new packets are queued |
 | `0x40` | in  | System status: bit 0 set means the host wants the guest to quit |
+| `0x50` | in  | Keyboard: each read pops one event; `0` means the queue is empty |
 
 Unmapped ports read as `0xFFFFFFFF`.
+
+### Interrupts and keyboard
+
+The guest runs with interrupts enabled. `boot.asm` builds an IDT covering vectors `0x00`-`0x21`; unhandled vectors and CPU faults land in a handler that executes `hlt`, which stops the guest. Keyboard input is delivered on vector `0x21`:
+
+1. The host maps each key press/release to a key code and queues an event (up to 64; extras are dropped).
+2. While the queue is non-empty and the guest has `IF` set, the CPU raises vector `0x21` between instructions. It is level triggered: it keeps firing until the handler has drained port `0x50`.
+3. The handler (`keyboard_isr` in `src/boot/input.cpp`) reads port `0x50` until it returns `0`, updates a key-state table and pushes new press/release events onto a 32-entry queue.
+
+Event word: bits 0-7 key code (USB HID usage IDs, the `KEY_*` constants in `sparky86.h`), bit 8 pressed, bit 9 auto-repeat. Auto-repeat events update the state table but are not queued. Guest API:
+
+```cpp
+bool key_down(uint8_t code);     // is the key currently held?
+bool key_pop(uint32_t *event);   // next press/release event, false if none
+```
+
+### Halting
+
+`hlt` with interrupts enabled idles the guest until an interrupt arrives (or the host requests quit), so a guest can sleep between frames. `hlt` with interrupts disabled stops the emulator, because nothing could ever wake it. That is what happens when `_start` returns, and in the default handler for CPU faults and unhandled vectors.
 
 ### Quitting
 
