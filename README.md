@@ -56,6 +56,8 @@ Unmapped ports read as `0xFFFFFFFF`.
 
 ### Interrupts and keyboard
 
+Vector `0x20` is a vertical-blank interrupt, raised once each time the host displays a frame (edge triggered). Its handler does nothing; it exists so a guest can `hlt` until the next frame instead of spinning. `present()` does this while it waits for the host, so a guest that calls `present()` once per frame uses almost no CPU. A guest that never waits (no `present()` or `hlt`) runs the emulated CPU flat out.
+
 The guest runs with interrupts enabled. `boot.asm` builds an IDT covering vectors `0x00`-`0x21`; unhandled vectors and CPU faults land in a handler that executes `hlt`, which stops the guest. Keyboard input is delivered on vector `0x21`:
 
 1. The host maps each key press/release to a key code and queues an event (up to 64; extras are dropped).

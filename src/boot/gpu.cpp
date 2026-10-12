@@ -54,7 +54,7 @@ void present()
     submit_gpu_command(GPU_CMD_PRESENT, 0, 0, 0, 0);
     while (GPU_READ_PTR != GPU_WRITE_PTR && !quit_requested())
     {
-        __asm__ volatile("pause");
+        __asm__ volatile("hlt"); // sleep until the next vblank (or key) interrupt instead of spinning
     }
 }
 

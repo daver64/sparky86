@@ -18,6 +18,7 @@ constexpr uint32_t SYSTEM_STATUS_QUIT = 1;
 // Keyboard: reading the port pops one event (0 = queue empty).
 // Event word: bits 0-7 key code (USB HID usage), bit 8 pressed, bit 9 auto-repeat.
 constexpr uint16_t PORT_KEYBOARD_DATA = 0x50;
+constexpr uint8_t IRQ_VECTOR_VBLANK = 0x20;   // edge triggered, raised once per displayed frame
 constexpr uint8_t IRQ_VECTOR_KEYBOARD = 0x21;
 constexpr uint32_t KEY_EVENT_PRESSED = 1u << 8;
 constexpr uint32_t KEY_EVENT_REPEAT = 1u << 9;
@@ -55,6 +56,7 @@ class SystemBus
     bool m_gpu_dirty = false;
     std::atomic<bool> m_quit_requested{false};
     std::deque<uint32_t> m_key_queue;
+    std::atomic<bool> m_vblank_pending{false};
     std::atomic<size_t> m_key_pending{0}; // lock-free mirror of m_key_queue.size() for the CPU thread
 
     // Thread-safe helpers to read/write 32-bit integers from raw memory vectors
@@ -106,6 +108,7 @@ class SystemBus
         m_quit_requested = false;
         m_key_queue.clear();
         m_key_pending = 0;
+        m_vblank_pending = false;
     }
     void request_quit() { m_quit_requested = true; }
     bool quit_requested() const { return m_quit_requested; }
@@ -122,7 +125,20 @@ class SystemBus
 
     // Called by the CPU thread between instructions: returns the vector of a pending
     // interrupt, or -1. Level triggered: stays pending until the guest drains the device.
-    int pending_irq() const { return m_key_pending.load() ? IRQ_VECTOR_KEYBOARD : -1; }
+    int pending_irq() const
+    {
+        if (m_vblank_pending)
+            return IRQ_VECTOR_VBLANK;
+        return m_key_pending.load() ? IRQ_VECTOR_KEYBOARD : -1;
+    }
+    // Host: a frame has been displayed
+    void signal_vblank() { m_vblank_pending = true; }
+    // CPU thread: the interrupt has been delivered (vblank is edge triggered)
+    void ack_irq(int vector)
+    {
+        if (vector == IRQ_VECTOR_VBLANK)
+            m_vblank_pending = false;
+    }
 
     uint32_t read_io(uint16_t port)
     {

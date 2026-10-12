@@ -6,7 +6,7 @@ public start        ; Exposes our execution start entry hook to the linker
 extrn _start        ; Correct FASM spelling for importing an external symbol
 extrn keyboard_isr  ; C handler for IRQ vector 0x21
 
-IDT_ENTRIES = 0x22  ; vectors 0x00-0x21
+IDT_ENTRIES = 0x22  ; vectors 0x00-0x21 (0x20 vblank, 0x21 keyboard)
 
 use16               ; Emit initial real-mode instruction sets
 start:
@@ -41,12 +41,16 @@ protected_entry:
     add edi, 8
     loop .fill_idt
 
+    mov ebx, vblank_stub
+    mov edi, idt_start + 0x20 * 8
+    call set_gate
+
     mov ebx, keyboard_stub
     mov edi, idt_start + 0x21 * 8
     call set_gate
 
     lidt [idt_descriptor]
-    sti                 ; Interrupts on: the host can now deliver keyboard IRQs
+    sti                 ; Interrupts on: the host can now deliver vblank and keyboard IRQs
 
     call _start         ; Execute our GCC application framework entry loop
 
@@ -69,6 +73,10 @@ set_gate:
 default_isr:
     hlt
     jmp default_isr
+
+; Vertical blank: nothing to do, the interrupt just wakes a waiting hlt
+vblank_stub:
+    iretd
 
 keyboard_stub:
     pushad

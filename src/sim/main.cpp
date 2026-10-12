@@ -131,14 +131,14 @@ int main(int argc, char **argv)
 
     sl::gui_init();
 
-
     auto lang = TextEditor::LanguageDefinition::CPlusPlus();
-
 
     editor.SetLanguageDefinition(lang);
     // editor.SetPalette(TextEditor::GetLightPalette());
 
     open_file("boot.asm");
+    sl::set_vsync(false);
+    sl::set_fps(60);
 
     sl::set_window_title("Sparky86!");
     std::vector<uint8_t> payload((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
@@ -248,15 +248,11 @@ int main(int argc, char **argv)
         if (global_state.cores[0]->is_paused() && global_state.cores[0]->is_parked())
             draw_debug_panel(*global_state.cores[0]);
 
-
-
         update_editor(*global_state.cores[0]);
-
-
-
 
         sl::show_video_bitmap();
         sl::end_frame();
+        global_state.system_bus.signal_vblank();
     }
     // Ask the guest to exit; force-stop the emulator if it doesn't comply
     global_state.system_bus.request_quit();

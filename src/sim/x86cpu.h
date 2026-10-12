@@ -127,7 +127,9 @@ private:
     void deliver_interrupts() {
         if (!(m_emu->x86.R_EFLG & F_IF) || m_emu->x86.intr_type) return;
         int vector = m_bus.pending_irq();
-        if (vector >= 0) x86emu_intr_raise(m_emu, static_cast<u8>(vector), INTR_TYPE_SOFT, 0);
+        if (vector < 0) return;
+        x86emu_intr_raise(m_emu, static_cast<u8>(vector), INTR_TYPE_SOFT, 0);
+        m_bus.ack_irq(vector);
     }
 
     static unsigned memio_handler(x86emu_t* emu, u32 addr, u32* val, unsigned type) {
