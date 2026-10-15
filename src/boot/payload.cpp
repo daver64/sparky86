@@ -39,13 +39,14 @@ extern "C" void _start()
             dy=-dy;
         }
         clear_screen(rgba(100,100,100,255));
-        draw_colour(rgba(255,255,0,255));
+        draw_colour(rgba(255,0,0,255));
         line(10,50,100,50);
         rect(xpos, ypos, xpos+100, ypos+100);
-        draw_colour(rgba(255,0,0,255));
+        draw_colour(rgba(0,255,0,255));
         textprintf(10, 10, "pos %d,%d  arrows steer, hold space to pause", xpos, ypos);
         angle = fp_add(angle, step);
         textprintf(10, 30, "sin(angle) = %.3f  sqrt(2) = %.4f  pi = %f", fp_sin(angle), fp_sqrt(FP_TWO), FP_PI);
         present();
     }
 }
+

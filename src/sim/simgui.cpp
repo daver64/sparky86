@@ -14,6 +14,9 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <unistd.h>
+
+namespace fs = std::filesystem;
 
 // Provided by main.cpp: reload pmode_core.bin into a fresh guest and start it
 bool restart_guest(bool paused);
@@ -95,10 +98,94 @@ static void draw_memory_window(X86Cpu &cpu)
     ImGui::End();
 }
 
+// Disassembly of guest RAM using ndisasm. The tool is only re-run when the address, mode or bytes change.
+static void draw_disasm_window(X86Cpu &cpu)
+{
+    static int base = 0;
+    static int bits_sel = 1; // 0=16, 1=32
+    static std::vector<uint8_t> bytes, last_bytes;
+    static std::vector<std::string> lines;
+    static std::string error;
+    static int last_base = -1, last_bits = -1;
+    static bool follow = false;
+    const int span = 256;
+
+    ImGui::SetNextWindowSize(ImVec2(560, 420), ImGuiCond_FirstUseEver);
+    ImGui::Begin("Disassembly");
+    ImGui::SetNextItemWidth(100);
+    ImGui::InputInt("Address", &base, 16, 256, ImGuiInputTextFlags_CharsHexadecimal);
+    base = std::max(0, std::min(base, 0x10000 - span));
+    ImGui::SameLine();
+    const bool to_eip = ImGui::Button("EIP");
+    ImGui::SameLine();
+    ImGui::Checkbox("Follow", &follow);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(80);
+    ImGui::Combo("##bits", &bits_sel, "16-bit\0" "32-bit\0");
+    const uint32_t eip = cpu.get_eip();
+    if (to_eip || follow)
+        base = static_cast<int>(std::min<uint32_t>(eip & 0xFFFF, 0x10000 - span));
+    ImGui::Separator();
+
+    const int bits = bits_sel == 0 ? 16 : 32;
+    if (!cpu.read_local_ram(base, span, bytes))
+    {
+        ImGui::TextDisabled("Address not readable");
+    }
+    else
+    {
+        if (base != last_base || bits != last_bits || bytes != last_bytes)
+        {
+            last_base = base;
+            last_bits = bits;
+            last_bytes = bytes;
+            lines.clear();
+            error.clear();
+            const fs::path tmp = fs::temp_directory_path() / ("sparky86_disasm_" + std::to_string(::getpid()) + ".bin");
+            {
+                std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+                out.write(reinterpret_cast<const char *>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+            }
+            const std::string cmd = "ndisasm -b " + std::to_string(bits) + " -o " + std::to_string(base) + " \"" + tmp.string() + "\" 2>&1";
+            if (FILE *pipe = popen(cmd.c_str(), "r"))
+            {
+                std::string text;
+                char buf[256];
+                while (fgets(buf, sizeof(buf), pipe))
+                    text += buf;
+                if (pclose(pipe) != 0)
+                    error = text.empty() ? "ndisasm failed (is it installed?)" : text;
+                else
+                {
+                    std::istringstream ss(text);
+                    std::string l;
+                    while (std::getline(ss, l))
+                        lines.push_back(l);
+                }
+            }
+            else
+                error = "Could not run ndisasm";
+            std::error_code ec;
+            fs::remove(tmp, ec);
+        }
+
+        if (!error.empty())
+            ImGui::TextColored(ImVec4(1.f, 0.4f, 0.4f, 1.f), "%s", error.c_str());
+        for (const auto &l : lines)
+        {
+            const unsigned long addr = strtoul(l.c_str(), nullptr, 16);
+            if (addr == (eip & 0xFFFF))
+                ImGui::TextColored(ImVec4(1.f, 0.9f, 0.3f, 1.f), "> %s", l.c_str());
+            else
+                ImGui::Text("  %s", l.c_str());
+        }
+    }
+    ImGui::End();
+}
+
 TextEditor editor;
 TextEditor::ErrorMarkers markers;
 
-namespace fs = std::filesystem;
 static const fs::path boot_dir = fs::path(SPARKY_SOURCE_DIR) / "src" / "boot";
 
 static std::string current_file; // file name within src/boot
@@ -153,8 +240,13 @@ bool open_file(const std::string &name)
         editor.SetColorizerEnable(true);
         editor.SetLanguageDefinition(TextEditor::LanguageDefinition::C());
     }
+    else if (ext == ".asm")
+    {
+        editor.SetColorizerEnable(true);
+        editor.SetLanguageDefinition(TextEditor::LanguageDefinition::Fasm());
+    }
     else
-        editor.SetColorizerEnable(false); // no highlighter for asm or linker scripts
+        editor.SetColorizerEnable(false); // no highlighter for linker scripts
     current_file = name;
     dirty = false;
     status_msg.clear();
@@ -410,6 +502,7 @@ void update_editor(X86Cpu &cpu)
         draw_build_window();
         draw_registers_window(cpu);
         draw_memory_window(cpu);
+        draw_disasm_window(cpu);
 
         sl::gui_render();
 

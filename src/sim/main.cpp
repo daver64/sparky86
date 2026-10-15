@@ -115,8 +115,8 @@ int main(int argc, char **argv)
         else
             program_path = arg;
     }
-
-    if (!sl::set_gfx_mode(sl::GFX_AUTODETECT_WINDOWED, 800, 600))
+    
+    if (!sl::set_gfx_mode(sl::GFX_AUTODETECT_FULLSCREEN, 800, 600))
     {
         return -1;
     }
@@ -173,6 +173,10 @@ int main(int argc, char **argv)
                 case sl::Event::Key::f11:
                     cpu.set_paused(true);
                     cpu.step(100);
+                    break;
+
+                case sl::Event::Key::escape:
+                    running=false;
                     break;
                 default:
                     break;

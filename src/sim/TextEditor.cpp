@@ -3157,3 +3157,86 @@ const TextEditor::LanguageDefinition& TextEditor::LanguageDefinition::Lua()
 	}
 	return langDef;
 }
+
+const TextEditor::LanguageDefinition& TextEditor::LanguageDefinition::Fasm()
+{
+	static bool inited = false;
+	static LanguageDefinition langDef;
+	if (!inited)
+	{
+		// Directives, pseudo-instructions and macro keywords (stored upper-case: matching is case-insensitive)
+		static const char* const keywords[] = {
+			"format", "use16", "use32", "use64", "org", "include", "include", "file", "align", "db", "dw", "dd", "dp", "df", "dq", "dt", "du",
+			"rb", "rw", "rd", "rp", "rf", "rq", "rt", "times", "dup", "equ", "label", "virtual", "at", "as", "end", "section", "segment",
+			"entry", "stack", "heap", "macro", "struc", "struct", "endm", "ends", "purge", "restore", "irp", "irps", "irpv", "rept", "match",
+			"if", "else", "end if", "while", "repeat", "break", "load", "store", "from", "extrn", "public", "import", "export", "library",
+			"data", "code", "readable", "writeable", "writable", "executable", "discardable", "shareable", "interpreter", "dynamic",
+			"byte", "word", "dword", "pword", "fword", "qword", "tbyte", "tword", "dqword", "xword", "qqword", "yword", "dqqword", "zword",
+			"ptr", "short", "near", "far", "rva", "defined", "definite", "used", "eq", "eqtype", "relativeto", "lengthof", "sizeof", "bsr", "bsf",
+			"mod", "and", "or", "xor", "not", "shl", "shr", "calminstruction", "display", "assert", "namespace", "element", "postpone", "repeat",
+			"mov", "movzx", "movsx", "movsxd", "lea", "xchg", "push", "pop", "pusha", "popa", "pushad", "popad", "pushf", "popf", "pushfd", "popfd",
+			"add", "adc", "sub", "sbb", "inc", "dec", "neg", "cmp", "mul", "imul", "div", "idiv", "cbw", "cwd", "cwde", "cdq", "cdqe", "cqo",
+			"and", "or", "xor", "not", "test", "shl", "shr", "sal", "sar", "rol", "ror", "rcl", "rcr", "shld", "shrd", "bt", "bts", "btr", "btc",
+			"jmp", "call", "ret", "retn", "retf", "iret", "iretd", "iretq", "int", "int3", "into", "loop", "loope", "loopne", "jcxz", "jecxz", "jrcxz",
+			"je", "jz", "jne", "jnz", "ja", "jnbe", "jae", "jnb", "jb", "jnae", "jbe", "jna", "jg", "jnle", "jge", "jnl", "jl", "jnge", "jle", "jng",
+			"jc", "jnc", "jo", "jno", "js", "jns", "jp", "jpe", "jnp", "jpo",
+			"sete", "setz", "setne", "setnz", "seta", "setae", "setb", "setbe", "setg", "setge", "setl", "setle", "setc", "setnc",
+			"cmove", "cmovz", "cmovne", "cmovnz", "cmova", "cmovae", "cmovb", "cmovbe", "cmovg", "cmovge", "cmovl", "cmovle",
+			"movsb", "movsw", "movsd", "movsq", "cmpsb", "cmpsw", "cmpsd", "cmpsq", "scasb", "scasw", "scasd", "scasq",
+			"lodsb", "lodsw", "lodsd", "lodsq", "stosb", "stosw", "stosd", "stosq", "rep", "repe", "repz", "repne", "repnz",
+			"in", "out", "insb", "insw", "insd", "outsb", "outsw", "outsd", "cli", "sti", "cld", "std", "clc", "stc", "cmc",
+			"lahf", "sahf", "nop", "hlt", "wait", "lock", "cpuid", "rdtsc", "rdmsr", "wrmsr", "syscall", "sysret", "sysenter", "sysexit",
+			"lgdt", "lidt", "lldt", "ltr", "sgdt", "sidt", "sldt", "str", "lmsw", "smsw", "invlpg", "wbinvd", "clts", "lar", "lsl", "verr", "verw",
+			"bswap", "xadd", "cmpxchg", "cmpxchg8b", "leave", "enter", "bound", "xlat", "xlatb", "lds", "les", "lfs", "lgs", "lss", "popcnt", "lzcnt", "tzcnt",
+			"fld", "fst", "fstp", "fild", "fist", "fistp", "fadd", "fsub", "fmul", "fdiv", "fxch", "fcom", "fcomp", "fldz", "fld1", "fsqrt", "fabs", "fchs", "fwait", "finit", "fninit"
+		};
+		for (auto& k : keywords)
+		{
+			std::string s(k);
+			std::transform(s.begin(), s.end(), s.begin(), ::toupper);
+			langDef.mKeywords.insert(s);
+		}
+
+		static const char* const registers[] = {
+			"al", "ah", "bl", "bh", "cl", "ch", "dl", "dh", "ax", "bx", "cx", "dx", "si", "di", "bp", "sp", "ip",
+			"eax", "ebx", "ecx", "edx", "esi", "edi", "ebp", "esp", "eip", "eflags",
+			"rax", "rbx", "rcx", "rdx", "rsi", "rdi", "rbp", "rsp", "rip", "sil", "dil", "bpl", "spl",
+			"r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15", "r8d", "r9d", "r10d", "r11d", "r12d", "r13d", "r14d", "r15d",
+			"r8w", "r9w", "r10w", "r11w", "r12w", "r13w", "r14w", "r15w", "r8b", "r9b", "r10b", "r11b", "r12b", "r13b", "r14b", "r15b",
+			"cs", "ds", "es", "fs", "gs", "ss", "cr0", "cr2", "cr3", "cr4", "dr0", "dr1", "dr2", "dr3", "dr6", "dr7",
+			"st0", "st1", "st2", "st3", "st4", "st5", "st6", "st7", "mm0", "mm1", "mm2", "mm3", "mm4", "mm5", "mm6", "mm7",
+			"xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7", "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15"
+		};
+		for (auto& k : registers)
+		{
+			std::string s(k);
+			std::transform(s.begin(), s.end(), s.begin(), ::toupper);
+			Identifier id;
+			id.mDeclaration = "Register";
+			langDef.mIdentifiers.insert(std::make_pair(s, id));
+		}
+
+		langDef.mTokenRegexStrings.push_back(std::make_pair<std::string, PaletteIndex>("\\\"[^\\\"]*\\\"", PaletteIndex::String));
+		langDef.mTokenRegexStrings.push_back(std::make_pair<std::string, PaletteIndex>("\\\'[^\\\']*\\\'", PaletteIndex::String));
+		langDef.mTokenRegexStrings.push_back(std::make_pair<std::string, PaletteIndex>("0[xX][0-9a-fA-F]+", PaletteIndex::Number));
+		langDef.mTokenRegexStrings.push_back(std::make_pair<std::string, PaletteIndex>("\\$[0-9a-fA-F]+", PaletteIndex::Number));
+		langDef.mTokenRegexStrings.push_back(std::make_pair<std::string, PaletteIndex>("[0-9][0-9a-fA-F]*[hH]\\b", PaletteIndex::Number));
+		langDef.mTokenRegexStrings.push_back(std::make_pair<std::string, PaletteIndex>("[01]+[bB]\\b", PaletteIndex::Number));
+		langDef.mTokenRegexStrings.push_back(std::make_pair<std::string, PaletteIndex>("[0-9]+([.][0-9]*)?([eE][+-]?[0-9]+)?", PaletteIndex::Number));
+		langDef.mTokenRegexStrings.push_back(std::make_pair<std::string, PaletteIndex>("[a-zA-Z_.@?][a-zA-Z0-9_.@?$#~]*", PaletteIndex::Identifier));
+		langDef.mTokenRegexStrings.push_back(std::make_pair<std::string, PaletteIndex>("[\\[\\]\\{\\}\\!\\%\\^\\&\\*\\(\\)\\-\\+\\=\\~\\|\\<\\>\\?\\/\\:\\,\\$\\\\]", PaletteIndex::Punctuation));
+
+		langDef.mCommentStart = "\x01";
+		langDef.mCommentEnd = "\x02";
+		langDef.mSingleLineComment = ";";
+
+		langDef.mCaseSensitive = false;
+		langDef.mAutoIndentation = true;
+		langDef.mPreprocChar = '\0';
+
+		langDef.mName = "FASM";
+
+		inited = true;
+	}
+	return langDef;
+}
